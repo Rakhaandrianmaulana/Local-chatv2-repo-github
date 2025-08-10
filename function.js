@@ -1,345 +1,398 @@
+// Menunggu hingga seluruh konten halaman HTML dimuat
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Elemen UI Global ---
-    const authPage = document.getElementById('auth-page');
-    const chatPage = document.getElementById('chat-page');
-    const loginFormContainer = document.getElementById('login-form-container');
-    const registerFormContainer = document.getElementById('register-form-container');
 
-    // --- Database Lokal (LocalStorage) ---
-    const db = {
-        getUsers: () => JSON.parse(localStorage.getItem('chat_users')) || [],
-        saveUsers: (users) => localStorage.setItem('chat_users', JSON.stringify(users)),
-        getCurrentUser: () => JSON.parse(localStorage.getItem('chat_current_user')),
-        setCurrentUser: (userId) => localStorage.setItem('chat_current_user', JSON.stringify(userId)),
-        logoutUser: () => localStorage.removeItem('chat_current_user'),
+    // === BAGIAN ELEMEN DOM ===
+    // Mengambil semua elemen dari HTML yang akan kita manipulasi
+    const app = document.getElementById('app');
+    const mainNav = document.getElementById('main-nav');
+
+    // Views (Halaman)
+    const loginView = document.getElementById('login-view');
+    const registerView = document.getElementById('register-view');
+    const feedView = document.getElementById('feed-view');
+    const profileView = document.getElementById('profile-view');
+
+    // Forms
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+
+    // Tombol Navigasi
+    const navHomeBtn = document.getElementById('nav-home');
+    const navProfileBtn = document.getElementById('nav-profile');
+    const navLogoutBtn = document.getElementById('nav-logout');
+    const showRegisterLink = document.getElementById('show-register');
+    const showLoginLink = document.getElementById('show-login');
+
+    // Konten Feed
+    const postContentInput = document.getElementById('post-content');
+    const submitPostBtn = document.getElementById('submit-post');
+    const feedContainer = document.getElementById('feed-container');
+
+    // Konten Profil
+    const profileUsername = document.getElementById('profile-username');
+    const profileStats = document.getElementById('profile-stats');
+    const followUnfollowBtn = document.getElementById('follow-unfollow-btn');
+    const backToFeedBtn = document.getElementById('back-to-feed-btn');
+    const profilePostsContainer = document.getElementById('profile-posts-container');
+
+    // === BAGIAN MANAJEMEN DATA (Menggunakan Local Storage) ===
+    // Fungsi untuk mendapatkan data dari Local Storage
+    const getData = (key) => JSON.parse(localStorage.getItem(key)) || [];
+    // Fungsi untuk menyimpan data ke Local Storage
+    const setData = (key, data) => localStorage.setItem(key, JSON.stringify(data));
+
+    // Variabel untuk menyimpan state aplikasi
+    let state = {
+        users: getData('users'),
+        posts: getData('posts'),
+        follows: getData('follows'),
+        loggedInUserId: JSON.parse(localStorage.getItem('loggedInUserId')) || null,
     };
 
-    // --- State Aplikasi ---
-    let currentUser = null;
-    let currentChatFriendId = null;
-
-    // =================================================================
-    // INISIALISASI APLIKASI
-    // =================================================================
-    function init() {
-        setupEventListeners();
-        const loggedInUserId = db.getCurrentUser();
-        if (loggedInUserId) {
-            const users = db.getUsers();
-            currentUser = users.find(u => u.id === loggedInUserId);
-            if (currentUser) {
-                showChatPage();
-            } else {
-                // Jika user tidak ditemukan (data korup), logout
-                db.logoutUser();
-                showAuthPage();
-            }
+    // === FUNGSI INSIALISASI APLIKASI ===
+    const initApp = () => {
+        // Membuat akun 'Lana' jika belum ada
+        createLanaAccountIfNeeded();
+        // Memperbarui state dari local storage untuk memastikan data sinkron
+        state.users = getData('users');
+        state.follows = getData('follows');
+        
+        // Memeriksa apakah ada pengguna yang sedang login
+        if (state.loggedInUserId) {
+            showView('feed');
         } else {
-            showAuthPage();
+            showView('login');
         }
-    }
-
-    function setupEventListeners() {
-        // Navigasi Auth
-        document.getElementById('show-register').addEventListener('click', (e) => { e.preventDefault(); showRegisterForm(); });
-        document.getElementById('show-login').addEventListener('click', (e) => { e.preventDefault(); showLoginForm(); });
-
-        // Form Handler
-        document.getElementById('login-form').addEventListener('submit', handleLogin);
-        document.getElementById('register-form').addEventListener('submit', handleRegister);
-        document.getElementById('add-friend-form').addEventListener('submit', handleAddFriend);
-        document.getElementById('message-form').addEventListener('submit', handleSendMessage);
-        document.getElementById('profile-update-form').addEventListener('submit', handleProfileUpdate);
-
-        // Tombol
-        document.getElementById('logout-button').addEventListener('click', handleLogout);
-        document.getElementById('profile-button').addEventListener('click', showProfileModal);
-        document.getElementById('cancel-profile-update').addEventListener('click', hideProfileModal);
-        
-        // Listener untuk update realtime antar tab (simulasi)
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'chat_users' && currentUser) {
-                const users = db.getUsers();
-                currentUser = users.find(u => u.id === currentUser.id);
-                renderFriendsList();
-                if (currentChatFriendId) {
-                    renderChatMessages(currentChatFriendId);
-                }
-            }
-        });
-    }
-
-    // =================================================================
-    // MANAJEMEN TAMPILAN (UI)
-    // =================================================================
-    function showAuthPage() {
-        authPage.classList.remove('hidden');
-        chatPage.classList.add('hidden');
-        showLoginForm();
-    }
-
-    function showChatPage() {
-        authPage.classList.add('hidden');
-        chatPage.classList.remove('hidden');
-        loadChatUI();
-    }
-
-    function showLoginForm() {
-        loginFormContainer.classList.remove('hidden');
-        registerFormContainer.classList.add('hidden');
-    }
+    };
     
-    function showRegisterForm() {
-        loginFormContainer.classList.add('hidden');
-        registerFormContainer.classList.remove('hidden');
-    }
+    // Fungsi untuk membuat akun Lana dan follower botnya (HANYA SEKALI)
+    const createLanaAccountIfNeeded = () => {
+        const lanaExists = getData('users').some(user => user.email === 'lana@socmed.com');
+        if (!lanaExists) {
+            console.log("Membuat akun Lana dan follower bot untuk pertama kali...");
+            let users = [];
+            let follows = [];
+            let nextUserId = 1;
 
-    function loadChatUI() {
-        if (!currentUser) return;
-        document.getElementById('user-profile-name').textContent = currentUser.name;
-        document.getElementById('user-profile-id').textContent = `ID: ${currentUser.id}`;
-        document.getElementById('user-profile-pic').src = currentUser.profilePic || 'https://placehold.co/40x40/E2E8F0/4A5568?text=U';
-        renderFriendsList();
-    }
+            // Membuat akun Lana
+            const lana = {
+                id: nextUserId++,
+                username: 'Lana',
+                email: 'lana@socmed.com',
+                password: '123456', // Di aplikasi nyata, password harus di-hash!
+                verified: true
+            };
+            users.push(lana);
 
-    function renderFriendsList() {
-        const friendsListEl = document.getElementById('friends-list');
-        friendsListEl.innerHTML = '';
-        const users = db.getUsers();
-        
-        if (currentUser.friends.length === 0) {
-            friendsListEl.innerHTML = `<p class="text-center text-sm text-gray-500 p-4">Belum ada teman. Cari teman menggunakan ID mereka.</p>`;
-            return;
-        }
-
-        currentUser.friends.forEach(friendId => {
-            const friend = users.find(u => u.id === friendId);
-            if (friend) {
-                const friendEl = document.createElement('div');
-                friendEl.className = 'flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700';
-                friendEl.dataset.friendId = friend.id;
-                friendEl.innerHTML = `
-                    <img src="${friend.profilePic || 'https://placehold.co/40x40/E2E8F0/4A5568?text=F'}" class="w-10 h-10 rounded-full object-cover">
-                    <div class="flex-grow">
-                        <p class="font-semibold">${friend.name}</p>
-                    </div>
-                `;
-                friendEl.addEventListener('click', () => openChat(friend.id));
-                friendsListEl.appendChild(friendEl);
+            // Membuat beberapa bot follower (simulasi)
+            for (let i = 1; i <= 20; i++) {
+                const bot = {
+                    id: nextUserId++,
+                    username: `Bot Pengikut ${i}`,
+                    email: `bot${i}@socmed.com`,
+                    password: 'botpassword',
+                    verified: true
+                };
+                users.push(bot);
+                // Membuat data 'follow': bot mengikuti Lana
+                follows.push({ followerId: bot.id, followingId: lana.id });
             }
-        });
-    }
+            
+            setData('users', users);
+            setData('follows', follows);
+            console.log("Akun Lana dan bot berhasil dibuat.");
+        }
+    };
 
-    function openChat(friendId) {
-        currentChatFriendId = friendId;
-        const users = db.getUsers();
-        const friend = users.find(u => u.id === friendId);
-
-        document.getElementById('welcome-screen').classList.add('hidden');
-        document.getElementById('chat-area').classList.remove('hidden');
-
-        document.getElementById('chat-friend-name').textContent = friend.name;
-        document.getElementById('chat-friend-pic').src = friend.profilePic || 'https://placehold.co/40x40/E2E8F0/4A5568?text=F';
+    // === BAGIAN MANAJEMEN TAMPILAN (VIEW) ===
+    const showView = (viewId) => {
+        // Sembunyikan semua view terlebih dahulu
+        [loginView, registerView, feedView, profileView].forEach(v => v.classList.add('hidden'));
         
-        renderChatMessages(friendId);
-    }
-
-    function renderChatMessages(friendId) {
-        const messagesContainer = document.getElementById('chat-messages');
-        messagesContainer.innerHTML = '';
-        
-        const chatKey = [currentUser.id, friendId].sort().join('_');
-        const messages = currentUser.chats[chatKey] || [];
-
-        if (messages.length === 0) {
-            messagesContainer.innerHTML = `<p class="text-center text-sm text-gray-500">Mulai percakapanmu!</p>`;
-            return;
+        // Tampilkan view yang diminta
+        const viewToShow = document.getElementById(`${viewId}-view`);
+        if (viewToShow) {
+            viewToShow.classList.remove('hidden');
         }
 
-        messages.forEach(msg => {
-            const isMe = msg.from === currentUser.id;
-            const msgEl = document.createElement('div');
-            msgEl.className = `flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`;
-            msgEl.innerHTML = `
-                <div class="max-w-xs md:max-w-md p-3 rounded-2xl ${isMe ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-white dark:bg-gray-700 rounded-bl-lg'}">
-                    <p>${msg.msg}</p>
-                </div>
-            `;
-            messagesContainer.appendChild(msgEl);
-        });
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-    
-    function showProfileModal() {
-        document.getElementById('profile-name-input').value = currentUser.name;
-        document.getElementById('profile-preview-pic').src = currentUser.profilePic || 'https://placehold.co/40x40/E2E8F0/4A5568?text=U';
-        document.getElementById('profile-modal').classList.remove('hidden');
-    }
+        // Tampilkan atau sembunyikan navigasi utama
+        if (state.loggedInUserId) {
+            mainNav.classList.remove('hidden');
+            // Reset gaya tombol navigasi
+            navHomeBtn.classList.remove('text-blue-600', 'font-semibold');
+            navProfileBtn.classList.remove('text-blue-600', 'font-semibold');
+            
+            // Atur gaya tombol aktif
+            if (viewId === 'feed') {
+                 navHomeBtn.classList.add('text-blue-600', 'font-semibold');
+            } else if (viewId === 'profile' && document.getElementById('profile-view').dataset.userId == state.loggedInUserId) {
+                 navProfileBtn.classList.add('text-blue-600', 'font-semibold');
+            }
 
-    function hideProfileModal() {
-        document.getElementById('profile-modal').classList.add('hidden');
-    }
+        } else {
+            mainNav.classList.add('hidden');
+        }
 
-    // =================================================================
-    // HANDLER FUNGSI INTI
-    // =================================================================
-    function handleRegister(e) {
+        // Render konten yang sesuai untuk view
+        if (viewId === 'feed') renderFeed();
+    };
+
+    // === BAGIAN AUTENTIKASI ===
+    const handleRegister = (e) => {
         e.preventDefault();
-        const name = document.getElementById('register-name').value.trim();
-        const email = document.getElementById('register-email').value.trim();
+        const username = document.getElementById('register-username').value;
+        const email = document.getElementById('register-email').value;
         const password = document.getElementById('register-password').value;
 
-        if (!email.endsWith('@gmail.com')) {
-            alert('Email harus menggunakan @gmail.com');
-            return;
-        }
-        
-        const users = db.getUsers();
-        if (users.some(u => u.email === email)) {
-            alert('Email sudah terdaftar.');
+        if (state.users.some(u => u.email === email)) {
+            alert('Email sudah terdaftar. Silakan gunakan email lain.');
             return;
         }
 
-        const newId = users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1;
         const newUser = {
-            id: newId,
-            email: email,
-            password: password, // Di aplikasi nyata, ini harus di-hash!
-            name: name,
-            profilePic: '',
-            friends: [],
-            chats: {}
+            id: Date.now(), // ID unik berdasarkan waktu
+            username,
+            email,
+            password, // Ingat, ini tidak aman!
+            verified: false
         };
 
-        users.push(newUser);
-        db.saveUsers(users);
-        alert('Registrasi berhasil! Silakan login.');
-        showLoginForm();
-    }
-
-    function handleLogin(e) {
-        e.preventDefault();
-        const email = document.getElementById('login-email').value.trim();
-        const password = document.getElementById('login-password').value;
+        state.users.push(newUser);
+        setData('users', state.users);
         
-        const users = db.getUsers();
-        const user = users.find(u => u.email === email && u.password === password);
+        // Otomatis login setelah daftar
+        state.loggedInUserId = newUser.id;
+        localStorage.setItem('loggedInUserId', JSON.stringify(newUser.id));
+
+        alert('Pendaftaran berhasil! Anda sekarang login.');
+        registerForm.reset();
+        showView('feed');
+    };
+
+    const handleLogin = (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+
+        const user = state.users.find(u => u.email === email && u.password === password);
 
         if (user) {
-            currentUser = user;
-            db.setCurrentUser(user.id);
-            showChatPage();
+            state.loggedInUserId = user.id;
+            localStorage.setItem('loggedInUserId', JSON.stringify(user.id));
+            loginForm.reset();
+            showView('feed');
         } else {
             alert('Email atau password salah.');
         }
-    }
+    };
 
-    function handleLogout() {
-        currentUser = null;
-        currentChatFriendId = null;
-        db.logoutUser();
-        showAuthPage();
-    }
+    const handleLogout = () => {
+        state.loggedInUserId = null;
+        localStorage.removeItem('loggedInUserId');
+        showView('login');
+    };
 
-    function handleAddFriend(e) {
-        e.preventDefault();
-        const friendIdInput = document.getElementById('friend-id-input');
-        const friendId = parseInt(friendIdInput.value);
-        friendIdInput.value = '';
+    // === BAGIAN RENDER KONTEN DINAMIS ===
+    // Fungsi untuk membuat elemen HTML dari sebuah postingan
+    const createPostElement = (post) => {
+        const author = state.users.find(u => u.id === post.userId);
+        if (!author) return ''; // Jika penulis tidak ditemukan
 
-        if (isNaN(friendId) || friendId === currentUser.id) {
-            alert('ID tidak valid.');
-            return;
-        }
-
-        if (currentUser.friends.includes(friendId)) {
-            alert('Pengguna ini sudah menjadi teman Anda.');
-            return;
-        }
+        const postDiv = document.createElement('div');
+        postDiv.className = 'bg-white p-4 rounded-lg shadow-md mb-4';
         
-        const users = db.getUsers();
-        const friend = users.find(u => u.id === friendId);
+        const verifiedBadge = author.verified ? `<span class="verified-badge" title="Akun Terverifikasi">✔️</span>` : '';
 
-        if (friend) {
-            // Tambahkan ke daftar teman masing-masing
-            currentUser.friends.push(friendId);
-            friend.friends.push(currentUser.id);
-            
-            const userIndex = users.findIndex(u => u.id === currentUser.id);
-            const friendIndex = users.findIndex(u => u.id === friendId);
-            users[userIndex] = currentUser;
-            users[friendIndex] = friend;
-            
-            db.saveUsers(users);
-            renderFriendsList();
-            alert(`${friend.name} berhasil ditambahkan sebagai teman!`);
-        } else {
-            alert('Pengguna dengan ID tersebut tidak ditemukan.');
+        postDiv.innerHTML = `
+            <div class="flex items-center mb-2">
+                <img src="https://placehold.co/40x40/E2E8F0/4A5568?text=${author.username.charAt(0)}" class="w-10 h-10 rounded-full mr-3" alt="Avatar">
+                <div>
+                    <a href="#" class="font-bold hover:underline user-link" data-user-id="${author.id}">${author.username}</a>${verifiedBadge}
+                    <p class="text-sm text-gray-500">${new Date(post.timestamp).toLocaleString('id-ID')}</p>
+                </div>
+            </div>
+            <p class="mb-3">${post.content}</p>
+            <div>
+                <button class="text-blue-500 hover:underline comment-btn" data-post-id="${post.id}">Komentar</button>
+            </div>
+            <div class="mt-3 pt-3 border-t border-gray-200 comment-section hidden" id="comments-for-${post.id}">
+                <h4 class="font-semibold text-sm mb-2">Komentar Anonim:</h4>
+                <div class="comment-list">
+                    ${post.comments.map(c => `<p class="text-sm bg-gray-100 p-2 rounded mb-1">${c.content}</p>`).join('')}
+                </div>
+                <div class="mt-2">
+                    <input type="text" class="w-full text-sm p-1 border rounded comment-input" placeholder="Tulis komentar anonim...">
+                    <button class="text-sm bg-gray-200 px-2 py-1 rounded mt-1 hover:bg-gray-300 submit-comment-btn" data-post-id="${post.id}">Kirim</button>
+                </div>
+            </div>
+        `;
+        return postDiv;
+    };
+
+    const renderFeed = () => {
+        feedContainer.innerHTML = ''; // Kosongkan feed
+        const sortedPosts = [...state.posts].sort((a, b) => b.timestamp - a.timestamp);
+        sortedPosts.forEach(post => {
+            const postElement = createPostElement(post);
+            if(postElement) feedContainer.appendChild(postElement);
+        });
+    };
+
+    const renderProfile = (userId) => {
+        const user = state.users.find(u => u.id === userId);
+        if (!user) {
+            alert('Pengguna tidak ditemukan.');
+            showView('feed');
+            return;
         }
-    }
 
-    function handleSendMessage(e) {
-        e.preventDefault();
-        const msgInput = document.getElementById('message-input');
-        const msgText = msgInput.value.trim();
-        if (!msgText || !currentChatFriendId) return;
-        msgInput.value = '';
+        profileView.dataset.userId = userId; // Simpan ID user di elemen view
 
-        const newMessage = {
-            from: currentUser.id,
-            to: currentChatFriendId,
-            msg: msgText,
-            timestamp: new Date().toISOString()
+        // Update nama dan badge verifikasi
+        const verifiedBadge = user.verified ? `<span class="verified-badge" title="Akun Terverifikasi">✔️</span>` : '';
+        profileUsername.innerHTML = `${user.username}${verifiedBadge}`;
+        
+        // Hitung followers dan following
+        const followers = state.follows.filter(f => f.followingId === userId);
+        const following = state.follows.filter(f => f.followerId === userId);
+
+        // **SIMULASI UNTUK LANA**
+        const followerCount = user.email === 'lana@socmed.com' ? '9.038.024' : followers.length;
+
+        profileStats.innerHTML = `
+            <span><strong>${state.posts.filter(p => p.userId === userId).length}</strong> Postingan</span>
+            <span><strong>${followerCount}</strong> Pengikut</span>
+            <span><strong>${following.length}</strong> Mengikuti</span>
+        `;
+        
+        // Logika tombol Follow/Unfollow/Edit
+        if (userId === state.loggedInUserId) {
+            followUnfollowBtn.classList.add('hidden');
+        } else {
+            followUnfollowBtn.classList.remove('hidden');
+            const isFollowing = state.follows.some(f => f.followerId === state.loggedInUserId && f.followingId === userId);
+            if (isFollowing) {
+                followUnfollowBtn.textContent = 'Unfollow';
+                followUnfollowBtn.className = 'w-full p-2 rounded text-white bg-red-500 hover:bg-red-600';
+                followUnfollowBtn.dataset.action = 'unfollow';
+            } else {
+                followUnfollowBtn.textContent = 'Follow';
+                followUnfollowBtn.className = 'w-full p-2 rounded text-white bg-blue-500 hover:bg-blue-600';
+                followUnfollowBtn.dataset.action = 'follow';
+            }
+            followUnfollowBtn.dataset.userId = userId;
+        }
+
+        // Render postingan pengguna
+        profilePostsContainer.innerHTML = '';
+        const userPosts = [...state.posts].filter(p => p.userId === userId).sort((a, b) => b.timestamp - a.timestamp);
+        userPosts.forEach(post => {
+            const postElement = createPostElement(post);
+            if(postElement) profilePostsContainer.appendChild(postElement);
+        });
+
+        showView('profile');
+    };
+
+    // === BAGIAN AKSI PENGGUNA ===
+    const handleCreatePost = () => {
+        const content = postContentInput.value.trim();
+        if (!content) {
+            alert('Postingan tidak boleh kosong.');
+            return;
+        }
+
+        const newPost = {
+            id: Date.now(),
+            userId: state.loggedInUserId,
+            content,
+            timestamp: Date.now(),
+            comments: []
         };
 
-        const users = db.getUsers();
-        const userIndex = users.findIndex(u => u.id === currentUser.id);
-        const friendIndex = users.findIndex(u => u.id === currentChatFriendId);
-
-        const chatKey = [currentUser.id, currentChatFriendId].sort().join('_');
-
-        // Tambahkan pesan ke chat history kedua user
-        if (!users[userIndex].chats[chatKey]) users[userIndex].chats[chatKey] = [];
-        users[userIndex].chats[chatKey].push(newMessage);
+        state.posts.push(newPost);
+        setData('posts', state.posts);
+        postContentInput.value = '';
+        renderFeed();
+    };
+    
+    const handleFollowUnfollow = (targetUserId) => {
+        const isFollowing = state.follows.some(f => f.followerId === state.loggedInUserId && f.followingId === targetUserId);
         
-        if (!users[friendIndex].chats[chatKey]) users[friendIndex].chats[chatKey] = [];
-        users[friendIndex].chats[chatKey].push(newMessage);
-        
-        currentUser = users[userIndex]; // Update state lokal
-        db.saveUsers(users);
-        renderChatMessages(currentChatFriendId);
-    }
-
-    function handleProfileUpdate(e) {
-        e.preventDefault();
-        const newName = document.getElementById('profile-name-input').value.trim();
-        const newPicFile = document.getElementById('profile-pic-input').files[0];
-
-        const users = db.getUsers();
-        const userIndex = users.findIndex(u => u.id === currentUser.id);
-
-        if (newName) {
-            users[userIndex].name = newName;
-        }
-
-        if (newPicFile) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                users[userIndex].profilePic = e.target.result;
-                currentUser = users[userIndex];
-                db.saveUsers(users);
-                loadChatUI(); // Update UI setelah gambar dimuat
-                hideProfileModal();
-            };
-            reader.readAsDataURL(newPicFile);
+        if (isFollowing) {
+            // Unfollow
+            state.follows = state.follows.filter(f => !(f.followerId === state.loggedInUserId && f.followingId === targetUserId));
         } else {
-            currentUser = users[userIndex];
-            db.saveUsers(users);
-            loadChatUI();
-            hideProfileModal();
+            // Follow
+            state.follows.push({ followerId: state.loggedInUserId, followingId: targetUserId });
         }
-    }
+        
+        setData('follows', state.follows);
+        renderProfile(targetUserId); // Render ulang profil untuk update tombol dan statistik
+    };
 
-    // --- Jalankan Aplikasi ---
-    init();
+    const handleComment = (postId, commentContent) => {
+        if (!commentContent.trim()) return;
+
+        const post = state.posts.find(p => p.id === postId);
+        if (post) {
+            post.comments.push({ id: Date.now(), content: commentContent });
+            setData('posts', state.posts);
+            
+            // Render ulang view yang sedang aktif
+            if (!feedView.classList.contains('hidden')) {
+                renderFeed();
+            } else if (!profileView.classList.contains('hidden')) {
+                renderProfile(parseInt(profileView.dataset.userId));
+            }
+        }
+    };
+
+    // === EVENT LISTENERS ===
+    // Listener untuk form
+    registerForm.addEventListener('submit', handleRegister);
+    loginForm.addEventListener('submit', handleLogin);
+    
+    // Listener untuk link navigasi
+    showRegisterLink.addEventListener('click', (e) => { e.preventDefault(); showView('register'); });
+    showLoginLink.addEventListener('click', (e) => { e.preventDefault(); showView('login'); });
+    navLogoutBtn.addEventListener('click', handleLogout);
+    navHomeBtn.addEventListener('click', () => showView('feed'));
+    navProfileBtn.addEventListener('click', () => renderProfile(state.loggedInUserId));
+    backToFeedBtn.addEventListener('click', () => showView('feed'));
+
+    // Listener untuk aksi
+    submitPostBtn.addEventListener('click', handleCreatePost);
+    followUnfollowBtn.addEventListener('click', (e) => {
+        const userIdToFollow = parseInt(e.target.dataset.userId);
+        handleFollowUnfollow(userIdToFollow);
+    });
+
+    // Event Delegation untuk elemen dinamis (postingan, komentar, dll)
+    app.addEventListener('click', (e) => {
+        // Klik link nama pengguna
+        if (e.target.matches('.user-link')) {
+            e.preventDefault();
+            const userId = parseInt(e.target.dataset.userId);
+            renderProfile(userId);
+        }
+
+        // Klik tombol komentar
+        if (e.target.matches('.comment-btn')) {
+            const postId = e.target.dataset.postId;
+            const commentSection = document.getElementById(`comments-for-${postId}`);
+            commentSection.classList.toggle('hidden');
+        }
+
+        // Klik tombol kirim komentar
+        if (e.target.matches('.submit-comment-btn')) {
+            const postId = parseInt(e.target.dataset.postId);
+            const input = e.target.previousElementSibling;
+            handleComment(postId, input.value);
+            input.value = '';
+        }
+    });
+
+    // Jalankan aplikasi
+    initApp();
 });
